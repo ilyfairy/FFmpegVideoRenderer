@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Sdcb.FFmpeg.Codecs;
 using Sdcb.FFmpeg.Formats;
 using Sdcb.FFmpeg.Raw;
@@ -63,6 +64,9 @@ namespace FFmpegVideoRenderer
             {
                 if (track.Children.Count > 0)
                 {
+                    if (track.Children.Count == 0)
+                        continue;
+
                     var max = track.Children.Max(item => item.AbsoluteEndTime);
                     if (max > time)
                         time = max;
@@ -73,6 +77,9 @@ namespace FFmpegVideoRenderer
             {
                 if (track.Children.Count > 0)
                 {
+                    if (track.Children.Count == 0)
+                        continue;
+
                     var max = track.Children.Max(item => item.AbsoluteEndTime);
                     if (max > time)
                         time = max;
@@ -86,6 +93,9 @@ namespace FFmpegVideoRenderer
             TimeSpan time = TimeSpan.Zero;
             foreach (var track in project.VideoTracks)
             {
+                if (track.Children.Count == 0)
+                    continue;
+
                 var max = track.Children.Max(item => item.AbsoluteEndTime);
                 if (max > time)
                     time = max;
@@ -212,19 +222,27 @@ namespace FFmpegVideoRenderer
             }
         }
 
-        public static unsafe void Render(Project project, Stream outputStream, IProgress<RenderProgress>? progress)
+        public static unsafe void Render(Project project, Stream outputStream, IProgress<RenderProgress>? progress, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             RenderProgress renderProgress = new RenderProgress();
             TimeSpan videoTotalTime = GetVideoTime(project);
             TimeSpan audioTotalTime = GetAudioTime(project);
-            TimeSpan totalTime = videoTotalTime + audioTotalTime;
+            TimeSpan totalTime = Max(videoTotalTime, audioTotalTime); // videoTotalTime + audioTotalTime;
+            if(project.VideoTracks.Sum(v => v.Children.Count) != 0) // 没有视频轨道时不需要渲染kkkkkkkkkkk, 时间减半
+            {
+                totalTime *= 2;
+            }
             TimeSpan maxAudioTime = TimeSpan.Zero;
             TimeSpan maxVideoTime = TimeSpan.Zero;
             static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
             void SetProgress()
             {
                 TimeSpan time = maxAudioTime + maxVideoTime;
-                renderProgress.Progress = Math.Round((time / totalTime) * 100, 2);
+                var value = Math.Round((time / totalTime) * 100, 2);
+                Debug.Assert(value <= 100);
+                renderProgress.Progress = value;
                 progress?.Report(renderProgress);
             }
 
@@ -272,6 +290,16 @@ namespace FFmpegVideoRenderer
                 TimeBase = new AVRational(1, 44100)
             };
 
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException)
+            {
+                formatContext.Dispose();
+                throw;
+            }
+
             MediaStream videoStream = formatContext.NewStream(formatContext.VideoCodec);
             MediaStream audioStream = formatContext.NewStream(formatContext.AudioCodec);
 
@@ -312,6 +340,16 @@ namespace FFmpegVideoRenderer
             long sampleIndex = 0;
             while (true)
             {
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                catch (OperationCanceledException)
+                {
+                    formatContext.Dispose();
+                    throw;
+                }
+
                 var framePts = sampleIndex;
                 var frameTime = TimeSpan.FromSeconds((double)sampleIndex * outputSampleRate.Num / outputSampleRate.Den);
                 if (!HasMoreFrames(project, frameTime))
@@ -388,6 +426,16 @@ namespace FFmpegVideoRenderer
                 }
             }
 
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException)
+            {
+                formatContext.Dispose();
+                return;
+            }
+
             foreach (var packet in audioEncoder.EncodeFrame(null, packetRef))
             {
                 packet.RescaleTimestamp(audioEncoder.TimeBase, audioStream.TimeBase);
@@ -402,10 +450,25 @@ namespace FFmpegVideoRenderer
             long frameIndex = 0;
             while (true)
             {
+                if (project.VideoTracks.Sum(v => v.Children.Count) == 0)
+                {
+                    break;
+                }
+
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                catch (OperationCanceledException)
+                {
+                    formatContext.Dispose();
+                    throw;
+                }
+
                 var time = TimeSpan.FromSeconds((double)frameIndex * outputFrameRate.Num / outputFrameRate.Den);
                 maxVideoTime = Max(maxVideoTime, time);
                 SetProgress();
-
+                
                 if (!HasMoreFrames(project, time))
                 {
                     break;
@@ -510,6 +573,15 @@ namespace FFmpegVideoRenderer
                 frameIndex++;
             }
 
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException)
+            {
+                formatContext.Dispose();
+                throw;
+            }
 
             foreach (var packet in videoEncoder.EncodeFrame(null, packetRef))
             {
