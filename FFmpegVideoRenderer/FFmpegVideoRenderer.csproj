@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Sdcb.FFmpeg" Version="5.1.2" />
-    <PackageReference Include="Sdcb.FFmpeg.runtime.windows-x64" Version="5.1.2" />
+    <PackageReference Include="Sdcb.FFmpeg" Version="6.1.0.1" />
+    <PackageReference Include="Sdcb.FFmpeg.runtime.windows-x64" Version="6.1.0" />
     <PackageReference Include="SkiaSharp" Version="2.88.8" />
   </ItemGroup>
 
