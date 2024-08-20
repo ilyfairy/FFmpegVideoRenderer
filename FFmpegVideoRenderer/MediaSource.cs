@@ -408,38 +408,45 @@ namespace FFmpegVideoRenderer
                     // receive all audio frames
                     if (audioDecoder is not null)
                     {
-                        while (true)
+                        try
                         {
-                            codecResult = audioDecoder.ReceiveFrame(frame);
-
-                            if (codecResult == CodecResult.EOF)
+                            // 可能null引用异常
+                            while (true)
                             {
-                                return;
+                                codecResult = audioDecoder.ReceiveFrame(frame);
+
+                                if (codecResult == CodecResult.EOF)
+                                {
+                                    return;
+                                }
+
+                                if (codecResult == CodecResult.Again)
+                                {
+                                    break;
+                                }
+
+                                var frameTimestamp = GetVideoFrameTimestamp(frame);
+                                var frameTime = GetTimeFromStreamTimestamp(frameTimestamp, _inputAudioStream!.Value.TimeBase);
+                                var frameDuration = TimeSpan.FromSeconds((double)frame.NbSamples / frame.SampleRate * frame.ChLayout.nb_channels);
+
+                                // free array renting
+                                if (_currentAudioFrame.HasValue &&
+                                    _currentAudioFrame.Value.Samples != null)
+                                {
+                                    _audioDataArrayPool.Return(_currentAudioFrame.Value.Samples);
+                                }
+
+                                _currentAudioFrame = CreateAudioSamples(frame, _audioDataArrayPool, frame.NbSamples);
+                                _currentAudioFrameTime = frameTime;
+
+                                if (frameTime + frameDuration >= time)
+                                {
+                                    return;
+                                }
                             }
-
-                            if (codecResult == CodecResult.Again)
-                            {
-                                break;
-                            }
-
-                            var frameTimestamp = GetVideoFrameTimestamp(frame);
-                            var frameTime = GetTimeFromStreamTimestamp(frameTimestamp, _inputAudioStream!.Value.TimeBase);
-                            var frameDuration = TimeSpan.FromSeconds((double)frame.NbSamples / frame.SampleRate * frame.ChLayout.nb_channels);
-
-                            // free array renting
-                            if (_currentAudioFrame.HasValue &&
-                                _currentAudioFrame.Value.Samples != null)
-                            {
-                                _audioDataArrayPool.Return(_currentAudioFrame.Value.Samples);
-                            }
-
-                            _currentAudioFrame = CreateAudioSamples(frame, _audioDataArrayPool, frame.NbSamples);
-                            _currentAudioFrameTime = frameTime;
-
-                            if (frameTime + frameDuration >= time)
-                            {
-                                return;
-                            }
+                        }
+                        catch (Exception)
+                        {
                         }
                     }
 
