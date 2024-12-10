@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 using Sdcb.FFmpeg.Codecs;
 using Sdcb.FFmpeg.Formats;
 using Sdcb.FFmpeg.Raw;
@@ -13,6 +14,8 @@ namespace FFmpegVideoRenderer;
 
 public static class VideoRenderer
 {
+    public static ILogger? Logger { get; set; }
+
     static readonly Dictionary<VideoTransition, IVideoTransition> _videoTransitions = new()
     {
         [VideoTransition.Fade] = new FadeTransition(),
@@ -225,6 +228,7 @@ public static class VideoRenderer
 
     public static unsafe void Render(Project project, Stream outputStream, IProgress<RenderProgress>? progress, CancellationToken cancellationToken = default)
     {
+        Logger?.LogInformation("[Render] 导出视频开始 {Name}", project.Name);
         cancellationToken.ThrowIfCancellationRequested();
 
         RenderProgress renderProgress = new RenderProgress();
@@ -290,6 +294,7 @@ public static class VideoRenderer
             FrameSize = outputAudioFrameSize,
             TimeBase = new AVRational(1, 44100)
         };
+        Logger?.LogInformation("[Render] 编解码器创建完成 {Name}", project.Name);
 
         try
         {
@@ -337,6 +342,7 @@ public static class VideoRenderer
         float[] leftSampleFrameBuffer = new float[outputAudioFrameSize];
         float[] rightSampleFrameBuffer = new float[outputAudioFrameSize];
 
+        Logger?.LogInformation("[Render] 开始编解码音频 {Name}", project.Name);
         // audio encoding
         long sampleIndex = 0;
         while (true)
@@ -446,6 +452,7 @@ public static class VideoRenderer
             formatContext.WritePacket(packet);
         }
 
+        Logger?.LogInformation("[Render] 开始编解码视频 {Name}", project.Name);
         // video encoding
         #region Video Encoding
         long frameIndex = 0;
@@ -598,7 +605,7 @@ public static class VideoRenderer
         }
 
         #endregion
-
+        Logger?.LogInformation("[Render] End {Name}", project.Name);
 
         formatContext.WriteTrailer();
 
