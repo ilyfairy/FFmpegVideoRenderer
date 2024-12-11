@@ -248,8 +248,8 @@ namespace FFmpegVideoRenderer
                     {
                         samples[resultIndex] = new AudioSample()
                         {
-                            LeftValue = leftDataPtr[dataIndex],
-                            RightValue = rightDataPtr[dataIndex],
+                            LeftValue = leftDataPtr == null ? 0 : leftDataPtr[dataIndex],
+                            RightValue = rightDataPtr == null ? 0 : rightDataPtr[dataIndex],
                         };
                     }
 
@@ -447,6 +447,7 @@ namespace FFmpegVideoRenderer
                         }
                         catch (Exception)
                         {
+                            throw;
                         }
                     }
 
@@ -492,7 +493,10 @@ namespace FFmpegVideoRenderer
 
                         if (packet.StreamIndex == videoStreamIndex && videoDecoder is not null)
                         {
-                            videoDecoder.SendPacket(packet);
+                            if (mediaType == AVMediaType.Video)
+                            {
+                                videoDecoder.SendPacket(packet);
+                            }
                         }
                         else if (packet.StreamIndex == audioStreamIndex && audioDecoder is not null)
                         {

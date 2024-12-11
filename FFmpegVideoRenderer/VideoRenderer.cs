@@ -255,7 +255,6 @@ public static class VideoRenderer
         AVRational outputSampleRate = new AVRational(1, 44100);
         int outputAudioFrameSize = 1024;
 
-
         Dictionary<TrackItem, MediaSource> mediaSources = new();
 
         var resourceMap = project.Resources.ToDictionary(v => v.Id);
@@ -263,7 +262,8 @@ public static class VideoRenderer
         // prepare resources
         foreach (var trackItem in project.VideoTracks.SelectMany(v => v.Children).AsEnumerable<TrackItem>().Concat(project.AudioTracks.SelectMany(v => v.Children)))
         {
-            mediaSources[trackItem] = MediaSource.Create(resourceMap[trackItem.ResourceId].StreamFactory(), true);
+            var stream = resourceMap[trackItem.ResourceId].StreamFactory();
+            mediaSources[trackItem] = MediaSource.Create(stream, true);
         }
 
         // prepare rendering
@@ -661,4 +661,5 @@ public static class VideoRenderer
         }
         throw new NotSupportedException();
     }
+
 }
