@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Sdcb.FFmpeg.Codecs;
@@ -55,9 +56,9 @@ public static class VideoRenderer
         }
 
         return new SKRect(
-            videoTrackItem.PositionX, 
-            videoTrackItem.PositionY, 
-            videoTrackItem.PositionX + videoTrackItem.SizeWidth, 
+            videoTrackItem.PositionX,
+            videoTrackItem.PositionY,
+            videoTrackItem.PositionX + videoTrackItem.SizeWidth,
             videoTrackItem.PositionY + videoTrackItem.SizeHeight);
     }
 
@@ -226,8 +227,9 @@ public static class VideoRenderer
         }
     }
 
-    public static unsafe void Render(Project project, Stream outputStream, IProgress<RenderProgress>? progress, CancellationToken cancellationToken = default)
+    public static async Task Render(Project project, Stream outputStream, IProgress<RenderProgress>? progress, CancellationToken cancellationToken = default)
     {
+        await Task.Yield();
         Logger?.LogInformation("[Render] 导出视频开始 {Name}", project.Name);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -235,7 +237,7 @@ public static class VideoRenderer
         TimeSpan videoTotalTime = GetVideoTime(project);
         TimeSpan audioTotalTime = GetAudioTime(project);
         TimeSpan totalTime = Max(videoTotalTime, audioTotalTime); // videoTotalTime + audioTotalTime;
-        if(project.VideoTracks.Sum(v => v.Children.Count) != 0) // 没有视频轨道时不需要渲染kkkkkkkkkkk, 时间减半
+        if (project.VideoTracks.Sum(v => v.Children.Count) != 0) // 没有视频轨道时不需要渲染kkkkkkkkkkk, 时间减半
         {
             totalTime *= 2;
         }
@@ -253,16 +255,33 @@ public static class VideoRenderer
 
         AVRational outputFrameRate = new AVRational(1, 30);
         AVRational outputSampleRate = new AVRational(1, 44100);
-        int outputAudioFrameSize = 1024;
+        const int OutputAudioFrameSize = 1024;
 
         Dictionary<TrackItem, MediaSource> mediaSources = new();
 
         var resourceMap = project.Resources.ToDictionary(v => v.Id);
+        var videoAudioTrackLine = new AudioTrack(); // 专门存放视频的音频的音频轨道
+        project.AudioTracks.Add(videoAudioTrackLine);
 
         // prepare resources
-        foreach (var trackItem in project.VideoTracks.SelectMany(v => v.Children).AsEnumerable<TrackItem>().Concat(project.AudioTracks.SelectMany(v => v.Children)))
+        foreach (var trackItem in project.VideoTracks
+            .SelectMany(v => v.Children)
+            .AsEnumerable<TrackItem>()
+            .Concat(project.AudioTracks.SelectMany(v => v.Children)))
         {
             var stream = resourceMap[trackItem.ResourceId].StreamFactory();
+
+            if (trackItem is VideoTrackItem videoTrackItem) // 单独把视频里面的音频抽离出来
+            {
+                var audioTrackItem = videoTrackItem.ToAudioTrackItem();
+                videoAudioTrackLine.Children.Add(audioTrackItem);
+                var aStream = new MemoryStream();
+                await ToAudioStream(stream, aStream);
+                stream.Position = 0;
+                aStream.Position = 0;
+                mediaSources[audioTrackItem] = MediaSource.Create(aStream, true);
+            }
+            
             mediaSources[trackItem] = MediaSource.Create(stream, true);
         }
 
@@ -282,7 +301,10 @@ public static class VideoRenderer
         };
 
         AVChannelLayout avChannelLayout = default;
-        ffmpeg.av_channel_layout_default(&avChannelLayout, 2);
+        unsafe
+        {
+            ffmpeg.av_channel_layout_default(&avChannelLayout, 2);
+        }
 
         using CodecContext audioEncoder = new CodecContext(formatContext.AudioCodec)
         {
@@ -291,7 +313,7 @@ public static class VideoRenderer
             SampleRate = 44100,
             ChLayout = avChannelLayout,
             CodecType = AVMediaType.Audio,
-            FrameSize = outputAudioFrameSize,
+            FrameSize = OutputAudioFrameSize,
             TimeBase = new AVRational(1, 44100)
         };
         Logger?.LogInformation("[Render] 编解码器创建完成 {Name}", project.Name);
@@ -338,9 +360,8 @@ public static class VideoRenderer
         using var packetRef = new Packet();
         List<TrackItem> trackItemsToRender = new();
 
-
-        float[] leftSampleFrameBuffer = new float[outputAudioFrameSize];
-        float[] rightSampleFrameBuffer = new float[outputAudioFrameSize];
+        Span<float> leftSampleFrameBuffer = stackalloc float[OutputAudioFrameSize];
+        Span<float> rightSampleFrameBuffer = stackalloc float[OutputAudioFrameSize];
 
         Logger?.LogInformation("[Render] 开始编解码音频 {Name}", project.Name);
         // audio encoding
@@ -370,66 +391,63 @@ public static class VideoRenderer
             frame.ChLayout = audioEncoder.ChLayout;
             frame.SampleRate = audioEncoder.SampleRate;
 
-            fixed (float* leftSamplePtr = leftSampleFrameBuffer)
+            // clear the buffer
+            leftSampleFrameBuffer.Clear();
+
+            for (int i = 0; i < frame.NbSamples; i++)
             {
-                fixed (float* rightSamplePtr = rightSampleFrameBuffer)
+                var time = TimeSpan.FromSeconds((double)sampleIndex * outputSampleRate.Num / outputSampleRate.Den);
+                maxAudioTime = Max(maxAudioTime, time);
+                SetProgress();
+
+                if (!HasMoreFrames(project, time))
                 {
-                    // clear the buffer
-                    NativeMemory.Clear(leftSamplePtr, (nuint)(sizeof(float) * outputAudioFrameSize));
-
-                    for (int i = 0; i < frame.NbSamples; i++)
-                    {
-                        var time = TimeSpan.FromSeconds((double)sampleIndex * outputSampleRate.Num / outputSampleRate.Den);
-                        maxAudioTime = Max(maxAudioTime, time);
-                        SetProgress();
-
-                        if (!HasMoreFrames(project, time))
-                        {
-                            break;
-                        }
-
-                        float sampleLeft = 0;
-                        float sampleRight = 0;
-
-                        // audio track
-                        foreach (var track in project.AudioTracks)
-                        {
-                            CombineAudioSample(mediaSources, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
-                            sampleLeft += trackSampleLeft;
-                            sampleRight += trackSampleRight;
-                        }
-
-                        // video track
-                        foreach (var track in project.VideoTracks)
-                        {
-                            if (track.MuteAudio)
-                            {
-                                continue;
-                            }
-
-                            CombineAudioSample(mediaSources, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
-                            sampleLeft += trackSampleLeft;
-                            sampleRight += trackSampleRight;
-                        }
-
-                        leftSamplePtr[i] = sampleLeft;
-                        rightSamplePtr[i] = sampleRight;
-
-                        sampleIndex++;
-                    }
-
-                    frame.Data[0] = (nint)(void*)(leftSamplePtr);
-                    frame.Data[1] = (nint)(void*)(rightSamplePtr);
-                    frame.Pts = framePts;
-
-                    foreach (var packet in audioEncoder.EncodeFrame(frame, packetRef))
-                    {
-                        packet.RescaleTimestamp(audioEncoder.TimeBase, audioStream.TimeBase);
-                        packet.StreamIndex = audioStream.Index;
-
-                        formatContext.WritePacket(packet);
-                    }
+                    break;
                 }
+
+                float sampleLeft = 0;
+                float sampleRight = 0;
+
+                // audio track
+                foreach (var track in project.AudioTracks)
+                {
+                    CombineAudioSample(mediaSources, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
+                    sampleLeft += trackSampleLeft;
+                    sampleRight += trackSampleRight;
+                }
+
+                // video track // 不再编解码视频中的音频
+                //foreach (var track in project.VideoTracks)
+                //{
+                //    if (track.MuteAudio)
+                //    {
+                //        continue;
+                //    }
+
+                //    CombineAudioSample(mediaSources, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
+                //    sampleLeft += trackSampleLeft;
+                //    sampleRight += trackSampleRight;
+                //}
+
+                leftSampleFrameBuffer[i] = sampleLeft;
+                rightSampleFrameBuffer[i] = sampleRight;
+
+                sampleIndex++;
+            }
+
+            unsafe
+            {
+                frame.Data[0] = (nint)Unsafe.AsPointer(ref leftSampleFrameBuffer[0]);
+                frame.Data[1] = (nint)Unsafe.AsPointer(ref rightSampleFrameBuffer[0]);
+            }
+            frame.Pts = framePts;
+
+            foreach (var packet in audioEncoder.EncodeFrame(frame, packetRef))
+            {
+                packet.RescaleTimestamp(audioEncoder.TimeBase, audioStream.TimeBase);
+                packet.StreamIndex = audioStream.Index;
+
+                formatContext.WritePacket(packet);
             }
         }
 
@@ -476,7 +494,7 @@ public static class VideoRenderer
             var time = TimeSpan.FromSeconds((double)frameIndex * outputFrameRate.Num / outputFrameRate.Den);
             maxVideoTime = Max(maxVideoTime, time);
             SetProgress();
-            
+
             if (!HasMoreFrames(project, time))
             {
                 break;
@@ -642,7 +660,7 @@ public static class VideoRenderer
             }
             return;
         }
-        else if(bitmap.ColorType == SKColorType.Bgra8888)
+        else if (bitmap.ColorType == SKColorType.Bgra8888)
         {
             var ptr = bitmap.GetPixels();
             var pixels = new Span<(byte B, byte G, byte R, byte A)>((void*)ptr, bitmap.Width * bitmap.Height);
@@ -662,4 +680,56 @@ public static class VideoRenderer
         throw new NotSupportedException();
     }
 
+    /// <summary>
+    /// 抽离视频中的音频
+    /// </summary>
+    /// <param name="videoStream"></param>
+    /// <param name="outputStream"></param>
+    /// <returns></returns>
+    public static async Task ToAudioStream(Stream videoStream, Stream outputStream)
+    {
+        using var inFc = FormatContext.OpenInputIO(IOContext.ReadStream(videoStream));
+        var inAudioStream = inFc.GetAudioStream();
+        using CodecContext audioDecoder = new(Codec.FindDecoderById(inAudioStream.Codecpar!.CodecId));
+        audioDecoder.FillParameters(inAudioStream.Codecpar);
+        audioDecoder.Open();
+        audioDecoder.ChLayout = audioDecoder.ChLayout;
+        using var outFc = FormatContext.AllocOutput(formatName: "mp3");
+        outFc.AudioCodec = Codec.CommonEncoders.Libmp3lame;
+        var outAudioStream = outFc.NewStream(outFc.AudioCodec);
+        using var audioEncoder = new CodecContext(outFc.AudioCodec)
+        {
+            ChLayout = audioDecoder.ChLayout,
+            SampleFormat = outFc.AudioCodec.Value.NegociateSampleFormat(AVSampleFormat.Fltp),
+            SampleRate = outFc.AudioCodec.Value.NegociateSampleRates(inAudioStream.Codecpar.SampleRate),
+            BitRate = inAudioStream.Codecpar.BitRate
+        };
+        audioEncoder.ChLayout = audioEncoder.ChLayout;
+        audioEncoder.TimeBase = new AVRational(1, audioEncoder.SampleRate);
+        audioEncoder.Open(outFc.AudioCodec);
+        outAudioStream.Codecpar!.CopyFrom(audioEncoder);
+
+        // begin write
+        using var io = IOContext.WriteStream(outputStream);
+        outFc.Pb = io;
+        outFc.WriteHeader();
+
+        var decodingQueue = inFc
+            .ReadPackets(inAudioStream.Index)
+            .DecodeAllPackets(inFc, audioDecoder)
+            .ToThreadQueue(boundedCapacity: 64);
+
+        var encodingQueue = decodingQueue.GetConsumingEnumerable()
+            .AudioFifo(audioEncoder)
+            .EncodeAllFrames(outFc, audioEncoder)
+            .ToThreadQueue();
+
+        CancellationTokenSource end = new();
+        Dictionary<int, PtsDts> ptsDts = new();
+        encodingQueue.GetConsumingEnumerable()
+            .RecordPtsDts(ptsDts)
+            .WriteAll(outFc);
+        await end.CancelAsync();
+        outFc.WriteTrailer();
+    }
 }
