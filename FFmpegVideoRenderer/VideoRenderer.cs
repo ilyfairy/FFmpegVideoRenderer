@@ -276,10 +276,12 @@ public static class VideoRenderer
                 var audioTrackItem = videoTrackItem.ToAudioTrackItem();
                 videoAudioTrackLine.Children.Add(audioTrackItem);
                 var aStream = new MemoryStream();
-                await ToAudioStream(stream, aStream);
+                if (await ToAudioStream(stream, aStream))
+                {
+                    aStream.Position = 0;
+                    mediaSources[audioTrackItem] = MediaSource.Create(aStream, true);
+                }
                 stream.Position = 0;
-                aStream.Position = 0;
-                mediaSources[audioTrackItem] = MediaSource.Create(aStream, true);
             }
             
             mediaSources[trackItem] = MediaSource.Create(stream, true);
@@ -685,10 +687,14 @@ public static class VideoRenderer
     /// </summary>
     /// <param name="videoStream"></param>
     /// <param name="outputStream"></param>
-    /// <returns></returns>
-    public static async Task ToAudioStream(Stream videoStream, Stream outputStream)
+    /// <returns>如果返回false表示该视频没有音频轨道</returns>
+    public static async Task<bool> ToAudioStream(Stream videoStream, Stream outputStream)
     {
         using var inFc = FormatContext.OpenInputIO(IOContext.ReadStream(videoStream));
+        if (inFc.FindBestStreamOrNull(AVMediaType.Audio) is null)
+        {
+            return false;
+        }
         var inAudioStream = inFc.GetAudioStream();
         using CodecContext audioDecoder = new(Codec.FindDecoderById(inAudioStream.Codecpar!.CodecId));
         audioDecoder.FillParameters(inAudioStream.Codecpar);
@@ -731,5 +737,7 @@ public static class VideoRenderer
             .WriteAll(outFc);
         await end.CancelAsync();
         outFc.WriteTrailer();
+
+        return true;
     }
 }
