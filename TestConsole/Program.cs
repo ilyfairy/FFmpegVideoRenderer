@@ -1,8 +1,75 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using FFmpegVideoRenderer;
+using Sdcb.FFmpeg.Codecs;
+using Sdcb.FFmpeg.Formats;
+using Sdcb.FFmpeg.Raw;
+using Sdcb.FFmpeg.Toolboxs.Extensions;
 using SkiaSharp;
 using Spectre.Console;
+
+#region Audio To Video
+
+MemoryStream audioOutput = new();
+var input = File.OpenRead(@"D:\Downloads\Edge\S00125_CCM_13892271_2024-12-09_09-40-08.mp4");
+await ToAudioStream(input, audioOutput);
+Console.WriteLine("完成");
+Console.ReadLine();
+
+return;
+static async Task<bool> ToAudioStream(Stream videoStream, Stream outputStream)
+{
+    using var inFc = FormatContext.OpenInputIO(IOContext.ReadStream(videoStream));
+    if (inFc.FindBestStreamOrNull(AVMediaType.Audio) is null)
+    {
+        return false;
+    }
+    var inAudioStream = inFc.GetAudioStream();
+    using CodecContext audioDecoder = new(Codec.FindDecoderById(inAudioStream.Codecpar!.CodecId));
+    audioDecoder.FillParameters(inAudioStream.Codecpar);
+    audioDecoder.Open();
+    audioDecoder.ChLayout = audioDecoder.ChLayout;
+    using var outFc = FormatContext.AllocOutput(formatName: "mp3");
+    outFc.AudioCodec = Codec.CommonEncoders.Libmp3lame;
+    var outAudioStream = outFc.NewStream(outFc.AudioCodec);
+    using var audioEncoder = new CodecContext(outFc.AudioCodec)
+    {
+        ChLayout = audioDecoder.ChLayout,
+        SampleFormat = outFc.AudioCodec.Value.NegociateSampleFormat(AVSampleFormat.Fltp),
+        SampleRate = outFc.AudioCodec.Value.NegociateSampleRates(inAudioStream.Codecpar.SampleRate),
+        BitRate = inAudioStream.Codecpar.BitRate
+    };
+    audioEncoder.ChLayout = audioEncoder.ChLayout;
+    audioEncoder.TimeBase = new AVRational(1, audioEncoder.SampleRate);
+    audioEncoder.Open(outFc.AudioCodec);
+    outAudioStream.Codecpar!.CopyFrom(audioEncoder);
+
+    // begin write
+    using var io = IOContext.WriteStream(outputStream);
+    outFc.Pb = io;
+    outFc.WriteHeader();
+
+    var decodingQueue = inFc
+        .ReadPackets(inAudioStream.Index)
+        .DecodeAllPackets(inFc, audioDecoder)
+        .ToThreadQueue(boundedCapacity: 64);
+
+    var encodingQueue = decodingQueue.GetConsumingEnumerable()
+        .AudioFifo(audioEncoder)
+        .EncodeAllFrames(outFc, audioEncoder)
+        .ToThreadQueue();
+
+    CancellationTokenSource end = new();
+    Dictionary<int, PtsDts> ptsDts = new();
+    encodingQueue.GetConsumingEnumerable()
+        .RecordPtsDts(ptsDts)
+        .WriteAll(outFc);
+    await end.CancelAsync();
+    outFc.WriteTrailer();
+
+    return true;
+}
+#endregion
 
 #region Test MediaSource
 //var mediaPath = @"E:\CloudMusic\MV\ナナツカゼ,PIKASONIC,なこたんまる - 春めく.mp4";

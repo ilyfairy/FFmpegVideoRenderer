@@ -493,10 +493,7 @@ namespace FFmpegVideoRenderer
 
                         if (packet.StreamIndex == videoStreamIndex && videoDecoder is not null)
                         {
-                            if (mediaType == AVMediaType.Video)
-                            {
-                                videoDecoder.SendPacket(packet);
-                            }
+                            videoDecoder.SendPacket(packet);
                         }
                         else if (packet.StreamIndex == audioStreamIndex && audioDecoder is not null)
                         {

@@ -267,7 +267,8 @@ public static class VideoRenderer
         foreach (var trackItem in project.VideoTracks
             .SelectMany(v => v.Children)
             .AsEnumerable<TrackItem>()
-            .Concat(project.AudioTracks.SelectMany(v => v.Children)))
+            .Concat(project.AudioTracks.SelectMany(v => v.Children))
+            .ToArray())
         {
             var stream = resourceMap[trackItem.ResourceId].StreamFactory();
 
@@ -285,6 +286,11 @@ public static class VideoRenderer
             }
             
             mediaSources[trackItem] = MediaSource.Create(stream, true);
+        }
+        var mediaSourcesOnlyAudio = mediaSources.ToDictionary();
+        foreach (var item in mediaSources.Keys.OfType<VideoTrackItem>())
+        {
+            mediaSourcesOnlyAudio.Remove(item);
         }
 
         // prepare rendering
@@ -413,7 +419,7 @@ public static class VideoRenderer
                 // audio track
                 foreach (var track in project.AudioTracks)
                 {
-                    CombineAudioSample(mediaSources, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
+                    CombineAudioSample(mediaSourcesOnlyAudio, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
                     sampleLeft += trackSampleLeft;
                     sampleRight += trackSampleRight;
                 }
@@ -722,17 +728,15 @@ public static class VideoRenderer
 
         var decodingQueue = inFc
             .ReadPackets(inAudioStream.Index)
-            .DecodeAllPackets(inFc, audioDecoder)
-            .ToThreadQueue(boundedCapacity: 64);
+            .DecodeAllPackets(inFc, audioDecoder);
 
-        var encodingQueue = decodingQueue.GetConsumingEnumerable()
+        var encodingQueue = decodingQueue
             .AudioFifo(audioEncoder)
-            .EncodeAllFrames(outFc, audioEncoder)
-            .ToThreadQueue();
+            .EncodeAllFrames(outFc, audioEncoder);
 
         CancellationTokenSource end = new();
         Dictionary<int, PtsDts> ptsDts = new();
-        encodingQueue.GetConsumingEnumerable()
+        encodingQueue
             .RecordPtsDts(ptsDts)
             .WriteAll(outFc);
         await end.CancelAsync();
