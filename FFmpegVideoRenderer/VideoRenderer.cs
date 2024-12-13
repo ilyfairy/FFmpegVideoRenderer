@@ -734,12 +734,10 @@ public static class VideoRenderer
             .AudioFifo(audioEncoder)
             .EncodeAllFrames(outFc, audioEncoder);
 
-        CancellationTokenSource end = new();
         Dictionary<int, PtsDts> ptsDts = new();
         encodingQueue
             .RecordPtsDts(ptsDts)
             .WriteAll(outFc);
-        await end.CancelAsync();
         outFc.WriteTrailer();
 
         return true;
