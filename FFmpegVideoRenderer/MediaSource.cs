@@ -537,9 +537,7 @@ namespace FFmpegVideoRenderer
                 return _currentVideoFrame.Value;
             }
 
-            Console.WriteLine("获取帧[解码]2 开始 --");
             Decode(_inputFormatContext, _inputVideoDecoder, _inputAudioDecoder, AVMediaType.Video, _inputVideoStream?.Index ?? -1, _inputAudioStream?.Index ?? -1, time);
-            Console.WriteLine("获取帧[解码]2 结束 --");
 
             if (_currentVideoFrame.HasValue)
             {
