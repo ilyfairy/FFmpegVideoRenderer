@@ -14,7 +14,56 @@ internal class Program
 {
     private static async Task Main(string[] args)
     {
+        await WatchFFmpegDecode();
         Console.WriteLine("OK");
+    }
+
+    public static async Task WatchFFmpegDecode()
+    {
+        var input = "/mnt/z/6ef0d91afb13f477cbae9e0822363a99.mp4";
+        var outputDir = @"/mnt/z/6ef0d91afb13f477cbae9e0822363a99/frames";
+        Directory.CreateDirectory(outputDir);
+        using FileSystemWatcher watcher = new(outputDir);
+        int outputCount = 0;
+        watcher.Created += (sender, e) =>
+        {
+            outputCount++;
+            if (outputCount % 100 == 0)
+            {
+                Console.WriteLine($"ffmpeg已解码{outputCount}帧");
+            }
+        };
+        watcher.IncludeSubdirectories = true;
+        watcher.EnableRaisingEvents = true;
+
+        var proc = Process.Start(new ProcessStartInfo()
+        {
+            FileName = "ffmpeg",
+            Arguments = $"""
+            -i "{input}" "{outputDir}/frame%d.jpg"
+            """,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        })!;
+        _ = Task.Run(() =>
+        {
+            while (!proc.StandardOutput.EndOfStream)
+            {
+                var line = proc.StandardOutput.ReadLine();
+                Console.WriteLine($"[ffmpeg] {line}");
+            }
+        });
+        _ = Task.Run(() =>
+        {
+            while (!proc.StandardError.EndOfStream)
+            {
+                var line = proc.StandardError.ReadLine();
+                Console.WriteLine($"[ffmpeg] {line}");
+            }
+        });
+        await proc.WaitForExitAsync();
     }
 
     public static async Task Test1()
