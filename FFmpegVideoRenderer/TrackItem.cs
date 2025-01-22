@@ -1,4 +1,7 @@
-﻿namespace FFmpegVideoRenderer
+﻿using FFmpegVideoRenderer.Animations;
+using FFmpegVideoRenderer.Animations.Properties;
+
+namespace FFmpegVideoRenderer
 {
 
     public abstract class TrackItem
@@ -29,9 +32,6 @@
         /// Absolute end time in track
         /// </summary>
         public TimeSpan AbsoluteEndTime => Offset + Duration;
-
-        public TimeSpan FadeIn { get; set; }
-        public TimeSpan FadeOut { get; set; }
 
         /// <summary>
         /// Audio volume, 0~1

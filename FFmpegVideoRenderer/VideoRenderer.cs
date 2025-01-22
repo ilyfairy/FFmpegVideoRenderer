@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using FFmpegVideoRenderer.Values;
 using Microsoft.Extensions.Logging;
 using Sdcb.FFmpeg.Codecs;
 using Sdcb.FFmpeg.Formats;
@@ -128,16 +129,18 @@ public static class VideoRenderer
 
         if (bufferTrackItemsToRender.Count == 1)
         {
-            var trackItem = bufferTrackItemsToRender[0];
+            var trackItem = (AudioTrackItem)bufferTrackItemsToRender[0];
 
             if (mediaSources.TryGetValue(trackItem, out var mediaSource) &&
                 mediaSource.HasAudio)
             {
                 var relativeTime = GetMediaSourceRelatedTime(trackItem, time);
+                var opacity = trackItem.SoundKeyFrames.Sample(relativeTime);
+
                 if (mediaSource.GetAudioSample(relativeTime) is AudioSample sample)
                 {
-                    sampleLeft += sample.LeftValue;
-                    sampleRight += sample.RightValue;
+                    sampleLeft += (float)(sample.LeftValue * opacity.Value);
+                    sampleRight += (float)(sample.RightValue * opacity.Value);
                 }
             }
         }
@@ -526,15 +529,34 @@ public static class VideoRenderer
 
                 if (trackItemsToRender.Count == 1)
                 {
-                    var trackItem = trackItemsToRender[0];
+                    var trackItem = (VideoTrackItem)trackItemsToRender[0];
                     if (mediaSources.TryGetValue(trackItem, out var mediaSource))
                     {
                         var frameTime = GetMediaSourceRelatedTime(trackItem, time);
+                        var opacity = trackItem.OpacityKeyFrames.Sample(frameTime);
+                        var translate = trackItem.TranslateKeyFrames.Sample(frameTime);
+                        var scale = trackItem.ScaleKeyFrames.Sample(frameTime);
+
                         if (mediaSource.GetVideoFrameBitmap(frameTime) is SKBitmap frameBitmap)
                         {
-                            var dest = LayoutVideoTrackItem(project, (VideoTrackItem)trackItem);
+                            var dest = LayoutVideoTrackItem(project, trackItem);
 
-                            FixColor(frameBitmap);
+                            dest.Left += (int)translate.OffsetX;
+                            dest.Right += (int)translate.OffsetX;
+                            dest.Top += (int)translate.OffsetY;
+                            dest.Bottom += (int)translate.OffsetY;
+
+                            var newWidth = dest.Width * scale.ScaleX;
+                            var newHeight = dest.Height * scale.ScaleX;
+                            var widthDiff = newWidth - dest.Width;
+                            var heightDiff = newHeight - dest.Height;
+
+                            dest.Left -= (int)(widthDiff / 2);
+                            dest.Top -= (int)(heightDiff / 2);
+                            dest.Right += (int)(widthDiff / 2);
+                            dest.Bottom += (int)(heightDiff / 2);
+
+                            MultiplyAlpha(frameBitmap, (float)opacity.Value);
 
                             videoCanvas.DrawBitmap(frameBitmap, dest);
                         }
@@ -554,23 +576,63 @@ public static class VideoRenderer
                         var relativeTime1 = GetMediaSourceRelatedTime(trackItem1, time);
                         var relativeTime2 = GetMediaSourceRelatedTime(trackItem2, time);
 
+                        var opacity1 = ((VideoTrackItem)trackItem1).OpacityKeyFrames.Sample(relativeTime1);
+                        var translate1 = ((VideoTrackItem)trackItem1).TranslateKeyFrames.Sample(relativeTime1);
+                        var scale1 = ((VideoTrackItem)trackItem1).ScaleKeyFrames.Sample(relativeTime1);
+
+                        var opacity2 = ((VideoTrackItem)trackItem2).OpacityKeyFrames.Sample(relativeTime2);
+                        var translate2 = ((VideoTrackItem)trackItem2).TranslateKeyFrames.Sample(relativeTime2);
+                        var scale2 = ((VideoTrackItem)trackItem2).ScaleKeyFrames.Sample(relativeTime2);
+
                         if (mediaSource1.GetVideoFrameBitmap(relativeTime1) is SKBitmap frameBitmap1 &&
                             mediaSource2.GetVideoFrameBitmap(relativeTime2) is SKBitmap frameBitmap2)
                         {
                             var dest1 = LayoutVideoTrackItem(project, (VideoTrackItem)trackItem1);
                             var dest2 = LayoutVideoTrackItem(project, (VideoTrackItem)trackItem2);
 
+                            dest1.Left += (int)translate1.OffsetX;
+                            dest1.Right += (int)translate1.OffsetX;
+                            dest1.Top += (int)translate1.OffsetY;
+                            dest1.Bottom += (int)translate1.OffsetY;
+
+                            var newWidth = dest1.Width * scale1.ScaleX;
+                            var newHeight = dest1.Height * scale1.ScaleX;
+                            var widthDiff = newWidth - dest1.Width;
+                            var heightDiff = newHeight - dest1.Height;
+
+                            dest1.Left -= (int)(widthDiff / 2);
+                            dest1.Top -= (int)(heightDiff / 2);
+                            dest1.Right += (int)(widthDiff / 2);
+                            dest1.Bottom += (int)(heightDiff / 2);
+
+                            MultiplyAlpha(frameBitmap1, (float)opacity1.Value);
+
+                            dest2.Left += (int)translate2.OffsetX;
+                            dest2.Right += (int)translate2.OffsetX;
+                            dest2.Top += (int)translate2.OffsetY;
+                            dest2.Bottom += (int)translate2.OffsetY;
+
+                            newWidth = dest2.Width * scale2.ScaleX;
+                            newHeight = dest2.Height * scale2.ScaleX;
+                            widthDiff = newWidth - dest2.Width;
+                            heightDiff = newHeight - dest2.Height;
+
+                            dest2.Left -= (int)(widthDiff / 2);
+                            dest2.Top -= (int)(heightDiff / 2);
+                            dest2.Right += (int)(widthDiff / 2);
+                            dest2.Bottom += (int)(heightDiff / 2);
+
+                            MultiplyAlpha(frameBitmap2, (float)opacity2.Value);
+
                             if (_videoTransitions.TryGetValue(((VideoTrackItem)trackItem1).Transition, out var transition))
                             {
                                 transitionCanvas.Clear();
                                 transition.Render(transitionCanvas, new SKSize(transitionBitmap.Width, transitionBitmap.Height), frameBitmap1, dest1, frameBitmap2, dest2, transitionDuration, (float)transitionRate);
 
-                                FixColor(transitionBitmap);
                                 videoCanvas.DrawBitmap(transitionBitmap, default(SKPoint));
                             }
                             else
                             {
-                                FixColor(frameBitmap2);
                                 videoCanvas.DrawBitmap(frameBitmap2, dest2);
                             }
                         }
@@ -643,6 +705,33 @@ public static class VideoRenderer
         renderProgress.Progress = 100;
         progress?.Report(renderProgress);
         outputStream.Flush();
+    }
+
+    private static unsafe void MultiplyAlpha(SKBitmap bitmap, float opacity)
+    {
+        if (bitmap.ColorType is SKColorType.Rgba8888 or SKColorType.Bgra8888)
+        {
+            var ptr = bitmap.GetPixels();
+            var pixels = new Span<ColorXxxa>((void*)ptr, bitmap.Width * bitmap.Height);
+            var size = Vector<float>.Count;
+            Span<float> buffer = stackalloc float[size];
+            for (int i = 0; i <= pixels.Length - size; i += size)
+            {
+                for (int j = 0; j < size; j++)
+                {
+                    buffer[j] = pixels[i + j].A;
+                }
+                var newVec = new Vector<float>(buffer) * opacity;
+                for (int j = 0; j < size; j++)
+                {
+                    pixels[i + j].A = (byte)newVec[j];
+                }
+            }
+            foreach (ref var v in pixels[..^(pixels.Length % size)])
+            {
+                v.A = (byte)(opacity * v.A);
+            }
+        }
     }
 
     private static unsafe void FixColor(SKBitmap bitmap)

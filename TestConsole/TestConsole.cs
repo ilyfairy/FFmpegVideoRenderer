@@ -2,6 +2,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using FFmpegVideoRenderer;
+using FFmpegVideoRenderer.Animations;
+using FFmpegVideoRenderer.Animations.Properties;
 using Sdcb.FFmpeg.Codecs;
 using Sdcb.FFmpeg.Formats;
 using Sdcb.FFmpeg.Raw;
@@ -229,6 +231,19 @@ internal class TestConsole
                             EndTime = TimeSpan.FromSeconds(7),
                             SizeWidth = 100,
                             SizeHeight = 100,
+                            OpacityKeyFrames =
+                            {
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = default,
+                                    Value = 0,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(2),
+                                    Value = 1,
+                                }
+                            }
                         }
                     }
                 },
@@ -236,18 +251,6 @@ internal class TestConsole
                 {
                     Children =
                     {
-                        //new VideoTrackItem()
-                        //{
-                        //    ResourceId = "video1",
-                        //    Offset = TimeSpan.FromSeconds(0),
-                        //    StartTime = TimeSpan.FromSeconds(0),
-                        //    EndTime = TimeSpan.FromSeconds(40),
-                        //    Volume = 0,
-                        //    PositionX = 300,
-                        //    PositionY = 300,
-                        //    SizeWidth = 200,
-                        //    SizeHeight= 200,
-                        //},
                         new VideoTrackItem()
                         {
                             ResourceId = "video1",
@@ -257,6 +260,108 @@ internal class TestConsole
                             SizeWidth = outputWidth,
                             SizeHeight = outputHeight,
                             Volume = 1,
+                            OpacityKeyFrames =
+                            {
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = default,
+                                    Value = 0,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(2),
+                                    Value = 1,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(4),
+                                    Value = 0,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(6),
+                                    Value = 1,
+                                }
+                            },
+                            TranslateKeyFrames =
+                            {
+                                new KeyFrame<Translate>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(6),
+                                    Value = default,
+                                },
+                                new KeyFrame<Translate>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(6.25),
+                                    Value = new Translate(100, 0),
+                                },
+                                new KeyFrame<Translate>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(6.5),
+                                    Value = new Translate(-100, 0),
+                                },
+                                new KeyFrame<Translate>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(6.75),
+                                    Value = new Translate(0, 0),
+                                },
+                            },
+                            ScaleKeyFrames =
+                            {
+                                new KeyFrame<Scale>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(7),
+                                    Value = new Scale(1, 1),
+                                },
+                                new KeyFrame<Scale>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(7.25),
+                                    Value = new Scale(2, 2),
+                                },
+                                new KeyFrame<Scale>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(7.5),
+                                    Value = new Scale(0.5, 0.5),
+                                },
+                                new KeyFrame<Scale>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(7.75),
+                                    Value = new Scale(1, 1),
+                                },
+                            },
+                            SoundKeyFrames =
+                            {
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(8),
+                                    Value = 1,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(9),
+                                    Value = 0,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(10),
+                                    Value = 0,
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(12),
+                                    Value = 5
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(15),
+                                    Value = 5
+                                },
+                                new KeyFrame<Opacity>()
+                                {
+                                    Offset = TimeSpan.FromSeconds(16),
+                                    Value = 1
+                                }
+                            }
                         }
                     }
                 },
