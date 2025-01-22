@@ -30,10 +30,16 @@
         /// </summary>
         public TimeSpan AbsoluteEndTime => Offset + Duration;
 
+        public TimeSpan FadeIn { get; set; }
+        public TimeSpan FadeOut { get; set; }
+
         /// <summary>
         /// Audio volume, 0~1
         /// </summary>
         public float Volume { get; set; } = 1;
+
+        public VideoTransition Transition { get; set; }
+
 
         public bool IsTimeInRange(TimeSpan time)
         {

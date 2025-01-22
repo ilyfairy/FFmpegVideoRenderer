@@ -6,8 +6,8 @@
 
         public List<ProjectResource> Resources { get; } = new();
 
-        public List<AudioTrack> AudioTracks { get; } = new();
-        public List<VideoTrack> VideoTracks { get; } = new();
+        public List<AudioTrackLine> AudioTracks { get; } = new();
+        public List<VideoTrackLine> VideoTracks { get; } = new();
 
         public int OutputWidth { get; set; }
         public int OutputHeight { get; set; }

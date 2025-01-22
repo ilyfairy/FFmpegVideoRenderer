@@ -4,7 +4,7 @@
     {
     }
 
-    public class AudioTrack : Track<AudioTrackItem>
+    public class AudioTrackLine : TrackLine<AudioTrackItem>
     {
 
     }

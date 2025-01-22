@@ -10,11 +10,11 @@ using SkiaSharp;
 using Spectre.Console;
 
 
-internal class Program
+internal class TestConsole
 {
     private static async Task Main(string[] args)
     {
-        await WatchFFmpegDecode();
+        await TestRendering();
         Console.WriteLine("OK");
     }
 
@@ -200,77 +200,96 @@ internal class Program
 
     static async Task TestRendering()
     {
-        var video1 = @"E:\CloudMusic\MV\Erdenebat Baatar,Lkhamragchaa Lkhagvasuren,Altanjargal - Goyo (feat. Lkhamragchaa Lkhagvasuren, Altanjargal, Erdenechimeg G, Narandulam, Dashnyam & Uul Us).mp4";
-        var video2 = @"E:\CloudMusic\MV\ナナツカゼ,PIKASONIC,なこたんまる - 春めく.mp4";
-        var audio1 = @"E:\CloudMusic\KSHMR,Mark Sixma - Gladiator (Remix).mp3";
-        var image = @"C:\Users\SlimeNull\OneDrive\Pictures\Desktop\452ed6a06123465397510ef74da830e1.jpg";
-        using var output = new FileStream("output.mp4", FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+        var video1 = @"Z:\mopemope.mp4";
+        var image1 = @"Z:\WallpaperEngineLockOverride_randomIGDGRH.jpg";
+        using var output = new FileStream(@"Z:\output.mp4", FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+        int outputWidth = 800;
+        int outputHeight = 600;
 
         var project = new Project()
         {
-            OutputWidth = 800,
-            OutputHeight = 600,
+            OutputWidth = outputWidth,
+            OutputHeight = outputHeight,
             Resources =
             {
-                new ProjectResource("1", () => File.OpenRead(video1)),
-                new ProjectResource("2", () => File.OpenRead(video2)),
-                new ProjectResource("bgm", () => File.OpenRead(audio1)),
-                new ProjectResource("image", () => File.OpenRead(image)),
+                new ProjectResource("video1", () => File.OpenRead(video1)),
+                new ProjectResource("image1", () => File.OpenRead(image1)),
             },
             VideoTracks =
             {
-                new VideoTrack()
+                new VideoTrackLine()
                 {
                     Children =
                     {
                         new VideoTrackItem()
                         {
-                            ResourceId = "1",
+                            ResourceId = "image1",
                             Offset = TimeSpan.FromSeconds(0),
                             StartTime = TimeSpan.FromSeconds(0),
-                            EndTime = TimeSpan.FromSeconds(6),
-                            Volume = 0
-                        },
-                        new VideoTrackItem()
-                        {
-                            ResourceId = "2",
-                            Offset = TimeSpan.FromSeconds(4),
-                            StartTime = TimeSpan.FromSeconds(0),
-                            EndTime = TimeSpan.FromSeconds(30),
-                            Volume = 0
+                            EndTime = TimeSpan.FromSeconds(7),
+                            SizeWidth = 100,
+                            SizeHeight = 100,
                         }
                     }
                 },
-                new VideoTrack()
+                new VideoTrackLine()
                 {
                     Children =
                     {
+                        //new VideoTrackItem()
+                        //{
+                        //    ResourceId = "video1",
+                        //    Offset = TimeSpan.FromSeconds(0),
+                        //    StartTime = TimeSpan.FromSeconds(0),
+                        //    EndTime = TimeSpan.FromSeconds(40),
+                        //    Volume = 0,
+                        //    PositionX = 300,
+                        //    PositionY = 300,
+                        //    SizeWidth = 200,
+                        //    SizeHeight= 200,
+                        //},
                         new VideoTrackItem()
                         {
-                            ResourceId = "image",
+                            ResourceId = "video1",
+                            Offset = TimeSpan.FromSeconds(0),
                             StartTime = TimeSpan.FromSeconds(0),
-                            EndTime = TimeSpan.FromSeconds(90)
+                            EndTime = TimeSpan.FromSeconds(30),
+                            SizeWidth = outputWidth,
+                            SizeHeight = outputHeight,
+                            Volume = 1,
                         }
                     }
-                }
+                },
             },
-            AudioTracks =
-            {
-                new AudioTrack()
-                {
-                    Children =
-                    {
-                        new AudioTrackItem()
-                        {
-                            ResourceId = "bgm",
-                            StartTime = TimeSpan.FromSeconds(70),
-                            EndTime = TimeSpan.FromSeconds(264)
-                        }
-                    }
-                }
-            }
+            //AudioTracks =
+            //{
+            //    new AudioTrackLine()
+            //    {
+            //        Children =
+            //        {
+            //            new AudioTrackItem()
+            //            {
+            //                ResourceId = "bgm",
+            //                StartTime = TimeSpan.FromSeconds(70),
+            //                EndTime = TimeSpan.FromSeconds(264)
+            //            }
+            //        }
+            //    }
+            //}
         };
 
-        await VideoRenderer.Render(project, output, null);
+        await VideoRenderer.Render(project, output, new TestRenderProgress());
+    }
+}
+
+file class TestRenderProgress : IProgress<RenderProgress>
+{
+    private int i = 0;
+    public void Report(RenderProgress value)
+    {
+        if (i++ % 100 == 0)
+        {
+            Console.WriteLine($"进度: {value.Progress}");
+        }
     }
 }

@@ -112,7 +112,7 @@ public static class VideoRenderer
     static void CombineAudioSample(
         Dictionary<TrackItem, MediaSource> mediaSources,
         List<TrackItem> bufferTrackItemsToRender,
-        AudioTrack track,
+        AudioTrackLine track,
         TimeSpan time,
         out float sampleLeft,
         out float sampleRight)
@@ -171,7 +171,7 @@ public static class VideoRenderer
     static void CombineAudioSample(
         Dictionary<TrackItem, MediaSource> mediaSources,
         List<TrackItem> bufferTrackItemsToRender,
-        VideoTrack track,
+        VideoTrackLine track,
         TimeSpan time,
         out float sampleLeft,
         out float sampleRight)
@@ -237,7 +237,7 @@ public static class VideoRenderer
         TimeSpan videoTotalTime = GetVideoTime(project);
         TimeSpan audioTotalTime = GetAudioTime(project);
         TimeSpan totalTime = Max(videoTotalTime, audioTotalTime); // videoTotalTime + audioTotalTime;
-        if (project.VideoTracks.Sum(v => v.Children.Count) != 0) // 没有视频轨道时不需要渲染kkkkkkkkkkk, 时间减半
+        if (project.VideoTracks.Sum(v => v.Children.Count) != 0) // 没有视频轨道时不需要渲染, 时间减半
         {
             totalTime *= 2;
         }
@@ -260,33 +260,38 @@ public static class VideoRenderer
         Dictionary<TrackItem, MediaSource> mediaSources = new();
 
         var resourceMap = project.Resources.ToDictionary(v => v.Id);
-        var videoAudioTrackLine = new AudioTrack(); // 专门存放视频的音频的音频轨道
-        project.AudioTracks.Add(videoAudioTrackLine);
+
+        var audioTracksToRender = new List<AudioTrackLine>();
+        audioTracksToRender.AddRange(project.AudioTracks);
 
         // prepare resources
-        foreach (var trackItem in project.VideoTracks
-            .SelectMany(v => v.Children)
-            .AsEnumerable<TrackItem>()
-            .Concat(project.AudioTracks.SelectMany(v => v.Children))
-            .ToArray())
+        foreach (var trackLine in project.VideoTracks)
         {
-            var stream = resourceMap[trackItem.ResourceId].StreamFactory();
+            var videoAudioTrackLine = new AudioTrackLine(); // 专门存放视频的音频的音频轨道
 
-            if (trackItem is VideoTrackItem videoTrackItem) // 单独把视频里面的音频抽离出来
+            foreach (var trackItem in trackLine.Children)
             {
-                var audioTrackItem = videoTrackItem.ToAudioTrackItem();
-                videoAudioTrackLine.Children.Add(audioTrackItem);
-                var aStream = new MemoryStream();
-                if (await ToAudioStream(stream, aStream))
+                var stream = resourceMap[trackItem.ResourceId].StreamFactory();
+
+                if (trackItem is VideoTrackItem videoTrackItem) // 单独把视频里面的音频抽离出来
                 {
-                    aStream.Position = 0;
-                    mediaSources[audioTrackItem] = MediaSource.Create(aStream, true);
+                    var audioTrackItem = videoTrackItem.ToAudioTrackItem();
+                    videoAudioTrackLine.Children.Add(audioTrackItem);
+                    var aStream = new MemoryStream();
+                    if (await ToAudioStream(stream, aStream))
+                    {
+                        aStream.Position = 0;
+                        mediaSources[audioTrackItem] = MediaSource.Create(aStream, true);
+                    }
+                    stream.Position = 0;
                 }
-                stream.Position = 0;
+
+                mediaSources[trackItem] = MediaSource.Create(stream, true);
             }
-            
-            mediaSources[trackItem] = MediaSource.Create(stream, true);
+
+            audioTracksToRender.Add(videoAudioTrackLine);
         }
+
         var mediaSourcesOnlyAudio = mediaSources.ToDictionary();
         foreach (var item in mediaSources.Keys.OfType<VideoTrackItem>())
         {
@@ -417,9 +422,9 @@ public static class VideoRenderer
                 float sampleRight = 0;
 
                 // audio track
-                foreach (var track in project.AudioTracks)
+                foreach (var trackLine in audioTracksToRender)
                 {
-                    CombineAudioSample(mediaSourcesOnlyAudio, trackItemsToRender, track, time, out var trackSampleLeft, out var trackSampleRight);
+                    CombineAudioSample(mediaSourcesOnlyAudio, trackItemsToRender, trackLine, time, out var trackSampleLeft, out var trackSampleRight);
                     sampleLeft += trackSampleLeft;
                     sampleRight += trackSampleRight;
                 }
@@ -510,11 +515,11 @@ public static class VideoRenderer
 
             videoCanvas.Clear();
 
-            // 从下往上绘制
-            foreach (var track in project.VideoTracks.Reverse<VideoTrack>())
+            // 从下往上绘制, 顶部的覆盖底部的
+            foreach (var trackLine in project.VideoTracks.Reverse<VideoTrackLine>())
             {
                 trackItemsToRender.Clear();
-                foreach (var trackItem in track.Children.Where(trackItem => trackItem.IsTimeInRange(time)))
+                foreach (var trackItem in trackLine.Children.Where(trackItem => trackItem.IsTimeInRange(time)))
                 {
                     trackItemsToRender.Add(trackItem);
                 }
@@ -529,7 +534,7 @@ public static class VideoRenderer
                         {
                             var dest = LayoutVideoTrackItem(project, (VideoTrackItem)trackItem);
 
-                            RestoreColor(frameBitmap);
+                            FixColor(frameBitmap);
 
                             videoCanvas.DrawBitmap(frameBitmap, dest);
                         }
@@ -560,12 +565,12 @@ public static class VideoRenderer
                                 transitionCanvas.Clear();
                                 transition.Render(transitionCanvas, new SKSize(transitionBitmap.Width, transitionBitmap.Height), frameBitmap1, dest1, frameBitmap2, dest2, transitionDuration, (float)transitionRate);
 
-                                RestoreColor(transitionBitmap);
+                                FixColor(transitionBitmap);
                                 videoCanvas.DrawBitmap(transitionBitmap, default(SKPoint));
                             }
                             else
                             {
-                                RestoreColor(frameBitmap2);
+                                FixColor(frameBitmap2);
                                 videoCanvas.DrawBitmap(frameBitmap2, dest2);
                             }
                         }
@@ -640,7 +645,7 @@ public static class VideoRenderer
         outputStream.Flush();
     }
 
-    private static unsafe void RestoreColor(SKBitmap bitmap)
+    private static unsafe void FixColor(SKBitmap bitmap)
     {
         // TODO: 颜色转换错误
         return;
