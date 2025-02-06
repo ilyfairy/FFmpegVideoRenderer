@@ -38,7 +38,7 @@ namespace FFmpegVideoRenderer
         /// </summary>
         public float Volume { get; set; } = 1;
 
-        public VideoTransition Transition { get; set; }
+        public VideoTransition? Transition { get; set; }
 
 
         public bool IsTimeInRange(TimeSpan time)

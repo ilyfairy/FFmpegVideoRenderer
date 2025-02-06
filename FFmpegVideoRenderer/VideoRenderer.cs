@@ -624,7 +624,7 @@ public static class VideoRenderer
 
                             MultiplyAlpha(frameBitmap2, (float)opacity2.Value);
 
-                            if (_videoTransitions.TryGetValue(((VideoTrackItem)trackItem1).Transition, out var transition))
+                            if (trackItem1.Transition.HasValue && _videoTransitions.TryGetValue(trackItem1.Transition.Value, out var transition))
                             {
                                 transitionCanvas.Clear();
                                 transition.Render(transitionCanvas, new SKSize(transitionBitmap.Width, transitionBitmap.Height), frameBitmap1, dest1, frameBitmap2, dest2, transitionDuration, (float)transitionRate);
