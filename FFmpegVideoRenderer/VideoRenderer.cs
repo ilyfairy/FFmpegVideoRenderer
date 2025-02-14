@@ -139,8 +139,8 @@ public static class VideoRenderer
 
                 if (mediaSource.GetAudioSample(relativeTime) is AudioSample sample)
                 {
-                    sampleLeft += (float)(sample.LeftValue * opacity.Value);
-                    sampleRight += (float)(sample.RightValue * opacity.Value);
+                    sampleLeft += (float)(sample.LeftValue * opacity.Value * trackItem.Volume);
+                    sampleRight += (float)(sample.RightValue * opacity.Value * trackItem.Volume);
                 }
             }
         }
@@ -296,6 +296,10 @@ public static class VideoRenderer
         }
 
         var mediaSourcesOnlyAudio = mediaSources.ToDictionary();
+        foreach (var item in project.AudioTracks.SelectMany(v => v.Children))
+        {
+            mediaSourcesOnlyAudio[item] = MediaSource.Create(resourceMap[item.ResourceId].StreamFactory());
+        }
         foreach (var item in mediaSources.Keys.OfType<VideoTrackItem>())
         {
             mediaSourcesOnlyAudio.Remove(item);
@@ -622,7 +626,6 @@ public static class VideoRenderer
                             dest2.Right += (int)(widthDiff / 2);
                             dest2.Bottom += (int)(heightDiff / 2);
 
-                            MultiplyAlpha(frameBitmap2, (float)opacity2.Value);
 
                             if (trackItem1.Transition.HasValue && _videoTransitions.TryGetValue(trackItem1.Transition.Value, out var transition))
                             {
@@ -633,7 +636,12 @@ public static class VideoRenderer
                             }
                             else
                             {
-                                videoCanvas.DrawBitmap(frameBitmap2, dest2);
+                                using SKPaint paint = new();
+
+                                paint.Color = new SKColor(0,0,0, (byte)(opacity1.Value * 255));
+                                videoCanvas.DrawBitmap(frameBitmap1, dest1, paint);
+                                paint.Color = new SKColor(0,0,0, (byte)(opacity2.Value * 255));
+                                videoCanvas.DrawBitmap(frameBitmap2, dest2, paint);
                             }
                         }
 
